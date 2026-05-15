@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+<title>ARBERI PARKOUR EXTREMO</title>
+
+<script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
+
+<style>
+
+body{
+margin:0;
+overflow:hidden;
+background:#000;
+font-family:Courier New;
+touch-action:none;
+}
+
+.overlay{
+position:absolute;
+top:0;
+left:0;
+width:100%;
+height:100%;
+background:radial-gradient(circle,#0a1a2e 0%,#000 100%);
+display:flex;
+justify-content:center;
+align-items:center;
+z-index:1000;
+color:#00ffcc;
+flex-direction:column;
+}
+
+.terminal-box{
+background:rgba(0,20,40,.95);
+padding:40px;
+border:2px solid #00ffcc;
+box-shadow:0 0 40px #00ffcc;
+border-radius:20px;
+text-align:center;
+}
+
+input{
+background:#000;
+border:1px solid #00ffcc;
+color:#00ffcc;
+padding:15px;
+font-size:22px;
+text-align:center;
+margin-top:20px;
+width:300px;
+}
+
+.btn{
+margin-top:25px;
+padding:15px 40px;
+background:#00ffcc;
+border:none;
+font-weight:bold;
+cursor:pointer;
+font-size:18px;
+}
+
+#ui{
+position:absolute;
+top:20px;
+left:20px;
+z-index:10;
+background:rgba(0,0,0,.7);
+padding:15px;
+border:2px solid #00ffcc;
+color:#00ffcc;
+display:none;
+font-size:18px;
+}
+
+.controles{
+position:absolute;
+bottom:20px;
+width:100%;
+display:none;
+justify-content:space-between;
+padding:0 20px;
+box-sizing:border-box;
+z-index:1000;
+pointer-events:none;
+}
+
+.dpad{
+display:grid;
+grid-template-columns:repeat(3,60px);
+gap:5px;
+pointer-events:auto;
+}
+
+.btnmov,
+.jump{
+width:60px;
+height:60px;
+background:rgba(0,255,204,.2);
+border:2px solid #00ffcc;
+color:#00ffcc;
+display:flex;
+align-items:center;
+justify-content:center;
+border-radius:10px;
+font-size:20px;
+user-select:none;
+}
+
+.jump{
+width:100px;
+height:80px;
+font-size:18px;
+pointer-events:auto;
+}
+
+#gameover{
+display:none;
+}
+
+</style>
+
+<script>
+
+let juegoIniciado = false;
+
+function iniciarJuego(){
+
+document.querySelector("#menu").style.display = "none";
+
+document.querySelector("#ui").style.display = "block";
+
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0){
+
+document.querySelector(".controles").style.display = "flex";
+
+}
+
+juegoIniciado = true;
+
+}
+
+AFRAME.registerComponent('gameplay',{
+
+init:function(){
+
+this.keys = {};
+
+this.puntos = 0;
+
+this.vidas = 3;
+
+this.invulnerable = false;
+
+this.puedeSaltar = true;
+
+window.addEventListener('keydown',(e)=>{
+
+this.keys[e.code] = true;
+
+});
+
+window.addEventListener('keyup',(e)=>{
+
+this.keys[e.code] = false;
+
+});
+
+const bind = (id,key)=>{
+
+const el = document.querySelector(id);
+
+if(!el) return;
+
+el.addEventListener('touchstart',(e)=>{
+
+e.preventDefault();
+
+this.keys[key] = true;
+
+},{passive:false});
+
+el.addEventListener('touchend',(e)=>{
+
+e.preventDefault();
+
+this.keys[key] = false;
+
+},{passive:false});
+
+};
+
+bind('#up','KeyW');
+bind('#down','KeyS');
+bind('#left','KeyA');
+bind('#right','KeyD');
+bind('#jump','Space');
+
+this.actualizarUI();
+
+this.el.addEventListener('collide',(e)=>{
+
+const target = e.detail.body.el;
+
+if(!target) return;
+
+//////////////////////////////////////
+// PUNTOS
+//////////////////////////////////////
+
+if(target.classList.contains('suelo') && !target.dataset.tocada){
+
+target.dataset.tocada = "true";
+
+this.puntos += 200;
+
+this.actualizarUI();
+
+}
+
+//////////////////////////////////////
+// LAVA
+//////////////////////////////////////
+
+if(target.id === "lava" && !this.invulnerable){
+
+this.perderVida();
+
+}
+
+//////////////////////////////////////
+// META
+//////////////////////////////////////
+
+if(target.id === "meta"){
+
+this.puntos += 5000;
+
+this.actualizarUI();
+
+alert("PARKOUR COMPLETADO");
+
+}
+
+});
+
+},
+
+//////////////////////////////////////
+// PERDER VIDA
+//////////////////////////////////////
+
+perderVida:function(){
+
+this.invulnerable = true;
+
+this.vidas--;
+
+//////////////////////////////////////
+// REINICIAR PUNTOS
+//////////////////////////////////////
+
+this.puntos = 0;
+
+//////////////////////////////////////
+// ACTUALIZAR UI
+//////////////////////////////////////
+
+this.actualizarUI();
+
+//////////////////////////////////////
+// VIBRACION
+//////////////////////////////////////
+
+if(navigator.vibrate){
+
+navigator.vibrate([100,50,200]);
+
+}
+
+//////////////////////////////////////
+// GAME OVER
+//////////////////////////////////////
+
+if(this.vidas <= 0){
+
+juegoIniciado = false;
+
+document.querySelector("#gameover").style.display = "flex";
+
+document.querySelector("#finalscore").innerText =
+"PUNTOS: " + this.puntos;
+
+return;
+
+}
+
+//////////////////////////////////////
+// RESPAWN
+//////////////////////////////////////
+
+this.el.body.position.set(0,3,0);
+
+this.el.body.velocity.set(0,0,0);
+
+this.el.body.angularVelocity.set(0,0,0);
+
+//////////////////////////////////////
+// INVULNERABILIDAD TEMPORAL
+//////////////////////////////////////
+
+setTimeout(()=>{
+
+this.invulnerable = false;
+
+},1500);
+
+},
+
+//////////////////////////////////////
+// UI
+//////////////////////////////////////
+
+actualizarUI:function(){
+
+document.querySelector("#puntos").innerText = this.puntos;
+
+document.querySelector("#vidas").innerHTML =
+"❤️".repeat(this.vidas);
+
+},
+
+//////////////////////////////////////
+// MOVIMIENTO
+//////////////////////////////////////
+
+tick:function(){
+
+if(!this.el.body || !juegoIniciado) return;
+
+let v = this.el.body.velocity;
+
+let speed = 8;
+
+//////////////////////////////////////
+// MOVIMIENTO
+//////////////////////////////////////
+
+if(this.keys['KeyW']) v.z = -speed;
+else if(this.keys['KeyS']) v.z = speed;
+else v.z = 0;
+
+if(this.keys['KeyA']) v.x = -speed;
+else if(this.keys['KeyD']) v.x = speed;
+else v.x = 0;
+
+//////////////////////////////////////
+// SALTO
+//////////////////////////////////////
+
+if(this.keys['Space']){
+
+if(Math.abs(v.y) < 0.1 && this.puedeSaltar){
+
+v.y = 11;
+
+this.puedeSaltar = false;
+
+}
+
+}else{
+
+this.puedeSaltar = true;
+
+}
+
+//////////////////////////////////////
+// BLOQUEAR ROTACION
+//////////////////////////////////////
+
+this.el.body.quaternion.set(0,0,0,1);
+
+this.el.body.angularVelocity.set(0,0,0);
+
+}
+
+});
+
+//////////////////////////////////////
+// CAMARA
+//////////////////////////////////////
+
+AFRAME.registerComponent('camfollow',{
+
+init:function(){
+
+this.target = document.querySelector('#player');
+
+},
+
+tick:function(){
+
+if(!this.target) return;
+
+this.el.object3D.position.lerp(
+
+this.target.object3D.position,
+
+0.1
+
+);
+
+}
+
+});
+
+</script>
+
+</head>
+
+<body>
+
+<!-- CONTROLES -->
+
+<div class="controles">
+
+<div class="dpad">
+
+<div></div>
+<div id="up" class="btnmov">▲</div>
+<div></div>
+
+<div id="left" class="btnmov">◀</div>
+<div id="down" class="btnmov">▼</div>
+<div id="right" class="btnmov">▶</div>
+
+</div>
+
+<div id="jump" class="jump">SALTO</div>
+
+</div>
+
+<!-- MENU -->
+
+<div id="menu" class="overlay">
+
+<div class="terminal-box">
+
+<h1>ARBERI PARKOUR</h1>
+
+<input type="text" placeholder="PILOTO">
+
+<br>
+
+<button class="btn" onclick="iniciarJuego()">
+INICIAR MISIÓN
+</button>
+
+</div>
+
+</div>
+
+<!-- UI -->
+
+<div id="ui">
+
+PUNTOS:
+<span id="puntos">0</span>
+
+<br><br>
+
+VIDAS:
+<span id="vidas">❤️❤️❤️</span>
+
+</div>
+
+<!-- GAME OVER -->
+
+<div id="gameover" class="overlay">
+
+<div class="terminal-box">
+
+<h1>GAME OVER</h1>
+
+<p id="finalscore"></p>
+
+<button class="btn" onclick="location.reload()">
+REINTENTAR
+</button>
+
+</div>
+
+</div>
+
+<!-- ESCENA -->
+
+<a-scene physics="gravity:-12; friction:0.01;">
+<a-assets>
+  <img id="textura-cielo" src="img/cielo.jpg">
+  <img id="textura-lava" src="img/lava.jpg">
+</a-assets>
+
+<!-- CIELO -->
+
+<a-sky id="textura-cielo" src="cielo.jpg" rotation="0 -90 0"></a-sky>
+
+<!-- LAVA -->
+
+<a-plane id="lava"
+rotation="-90 0 0"
+position="0 -6 0"
+width="2000"
+height="2000"
+
+material=
+src:lava.jpg;
+repeat:20 20;
+transparent:true;
+emissive:#ff3300;
+emissiveIntensity:0.7;
+shader:standard
+
+animation="property: material.offset; from: 0 0; to:1 1; dur:300000; loop: true; easing: linear"
+
+static-body>
+</a-plane>
+
+<!-- LUCES -->
+
+<a-light type="ambient" intensity="1.2"></a-light>
+
+<a-light type="point"
+position="0 30 0"
+intensity="2"
+color="#00ffff">
+</a-light>
+
+<!-- MAPA -->
+
+<a-box class="suelo"
+static-body
+position="0 0 0"
+width="6"
+height="0.5"
+depth="6"
+color="#111">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="0 3 -10"
+width="3"
+height="0.4"
+depth="3"
+color="#222">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="-5 6 -18"
+width="2"
+height="0.4"
+depth="2"
+color="#333">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="4 9 -26"
+width="2"
+height="0.4"
+depth="2"
+color="#444">
+</a-box>
+
+<!-- MOVIL -->
+
+<a-box class="suelo"
+dynamic-body="mass:0"
+position="0 12 -35"
+width="3"
+height="0.4"
+depth="3"
+color="#00ffff"
+
+animation="
+property:position;
+to:8 12 -35;
+dir:alternate;
+dur:2500;
+loop:true">
+</a-box>
+
+<!-- FALSA -->
+
+<a-box
+position="-8 14 -45"
+width="4"
+height="0.2"
+depth="4"
+color="#550000"
+material="opacity:0.2">
+</a-box>
+
+<!-- REAL -->
+
+<a-box class="suelo"
+static-body
+position="8 15 -48"
+width="2"
+height="0.4"
+depth="2"
+color="#7700ff">
+</a-box>
+
+<!-- MICRO -->
+
+<a-box class="suelo"
+static-body
+position="12 18 -56"
+width="1.5"
+height="0.3"
+depth="1.5"
+color="#00ffcc">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="8 21 -63"
+width="1.5"
+height="0.3"
+depth="1.5"
+color="#00ffcc">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="3 24 -70"
+width="1.5"
+height="0.3"
+depth="1.5"
+color="#00ffcc">
+</a-box>
+
+<!-- TUNEL -->
+
+<a-box class="suelo"
+static-body
+position="0 28 -80"
+width="2"
+height="0.4"
+depth="10"
+color="#111">
+</a-box>
+
+<a-box
+static-body
+position="-2 30 -80"
+width="0.5"
+height="5"
+depth="10"
+color="#ff0000">
+</a-box>
+
+<a-box
+static-body
+position="2 30 -80"
+width="0.5"
+height="5"
+depth="10"
+color="#ff0000">
+</a-box>
+
+<!-- GIRATORIA -->
+
+<a-entity
+position="0 30 -95"
+
+animation="
+property:rotation;
+to:0 360 0;
+loop:true;
+dur:4000;
+easing:linear">
+
+<a-box class="suelo"
+static-body
+width="8"
+height="0.4"
+depth="2"
+color="#ff00ff">
+</a-box>
+
+</a-entity>
+
+<!-- FINAL -->
+
+<a-box class="suelo"
+static-body
+position="0 3 -110"
+width="5"
+height="0.5"
+depth="5"
+color="#ffffff"
+material="emissive:#00ffff; emissiveIntensity:1">
+</a-box>
+
+<!-- META -->
+
+<a-entity id="meta"
+static-body
+position="0 35 -110">
+
+<a-box
+width="10"
+height="0.5"
+depth="10"
+color="#00ffff"
+material="emissive:#00ffff; emissiveIntensity:3">
+</a-box>
+
+<a-text
+value="CORE COMPLETADO"
+align="center"
+position="0 4 0"
+scale="8 8 8"
+color="#00ffff">
+</a-text>
+
+</a-entity>
+
+<!-- JUGADOR -->
+
+<a-entity id="player"
+position="0 3 0"
+scale="1.5 1.5 1.5"
+gameplay
+dynamic-body="mass:2; fixedRotation:true">
+
+<!-- CUERPO -->
+
+<a-box position="0 1 -0.0178" depth="0.3" height="0.8" width="0.5" color="#0D47A1" material="" geometry=""></a-box>
+<a-torus position="0.02027 1.22817 -0.17149" radius="0.18" radius-tubular="0.01" color="#aaa" material="color: #ffe042" geometry="" rotation="3.76 0 0"></a-torus>
+
+<!-- CABEZA -->
+
+<a-sphere position="0 1.6 0" radius="0.25" color="#dcb48c" material="color: #543d27" geometry=""></a-sphere>
+<a-sphere position="-0.08 1.65 -0.24727" radius="0.02" color="#000" material="color: #1a59ea" geometry=""></a-sphere>
+<a-sphere position="0.08 1.65 -0.26903" radius="0.02" color="#000" material="color: #16acca" geometry=""></a-sphere>
+<a-text value="X" position="0.08 1.58 0.23" scale="0.2 0.2 0.2" color="#000" text=""></a-text>
+<a-box position="0.00797 1.78624 0.01477" depth="0.35" height="0.12" width="0.5" color="#222" material="color: #20b669" geometry="" scale="0.99 1.16 1.37"></a-box>
+ <a-sphere position="0.28 1.65 0" radius="0.015" color="#ccc" material="color: #0400f0; emissive: #1f1f1f" geometry=""></a-sphere>
+<a-sphere position="0.28 1.55 0" radius="0.015" color="#ccc" material="color: #ff0000" geometry=""></a-sphere>
+
+<!-- PIERNAS -->
+
+<a-box position="-0.15 0.3 0" depth="0.25" height="0.7" width="0.2" color="#222" material="" geometry=""></a-box>
+<a-box position="0.15 0.3 0" depth="0.25" height="0.7" width="0.2" color="#222" material="" geometry=""></a-box>
+<a-box position="-0.15 -0.05 -0.06946" depth="0.4" height="0.1" width="0.25" color="#111" material="" geometry=""></a-box>
+<a-box position="0.15 -0.05 -0.06413" depth="0.4" height="0.1" width="0.25" color="#111" material="" geometry=""></a-box>
+<!-- BRAZOS -->
+
+<a-box position="-0.4 1 0" depth="0.2" height="0.7" width="0.2" color="#dcb48c" material="color: #543d27" geometry=""></a-box>
+<a-box position="0.4 1 0" depth="0.2" height="0.7" width="0.2" color="#dcb48c" material="color: #543d27" geometry=""></a-box>
+<a-cylinder position="0.45 0.6 -0.2" radius="0.04" height="0.2" color="#333" material="" geometry=""></a-cylinder>
+<a-sphere position="0.45 0.72 -0.2" radius="0.03" color="#f00" material="" geometry=""></a-sphere>
+<a-torus position="0.45 0.7 -0.1" radius="0.03" radius-tubular="0.008" color="#ccc" material="" geometry=""></a-torus>
+</a-entity>
+
+<!-- CAMARA -->
+
+<a-entity id="camrig" camfollow>
+
+<a-camera
+position="0 7 14"
+look-controls="enabled:false"
+wasd-controls="enabled:false">
+</a-camera>
+
+</a-entity>
+
+</a-scene>
+
+</body>
+</html>
