@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ARBERI SAGA - 3 LEVELS</title>
+<script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
+
+<style>
+    body{ margin:0; font-family:'Courier New', monospace; background:#000; overflow:hidden; touch-action:none; }
+    .overlay{ position:absolute; top:0; left:0; width:100%; height:100%; background:radial-gradient(circle,#0a1a2e 0%,#000 100%); z-index:2000; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#00ffcc; text-align:center; border:8px double #00ffcc; box-sizing:border-box; }
+    .terminal-box{ background:rgba(0,20,40,0.95); padding:50px; border:2px solid #00ffcc; box-shadow:0 0 40px #00ffcc; border-radius:20px; }
+    input{ background:#000; border:1px solid #00ffcc; color:#00ffcc; padding:15px; font-size:22px; text-align:center; width:320px; margin-top:25px; outline:none; text-transform:uppercase; }
+    .btn-systec{ margin-top:35px; padding:15px 45px; background:#00ffcc; color:#000; border:none; font-weight:bold; cursor:pointer; font-size:20px; }
+    #ui-top{ position:absolute; top:20px; left:20px; z-index:10; background:rgba(0,10,20,0.85); color:#00ffcc; padding:18px; border:2px solid #00ffcc; border-radius:10px; display:none; }
+    .controles-movil{ position:absolute; bottom:20px; width:100%; display:none; justify-content:space-between; padding:0 30px; box-sizing:border-box; z-index:1000; pointer-events:none; }
+    .d-pad{ display:grid; grid-template-columns:repeat(3,55px); gap:5px; pointer-events:auto; }
+    .d-btn,.btn-salto{ width:55px; height:55px; background:rgba(0,255,204,0.2); border:2px solid #00ffcc; color:#00ffcc; display:flex; align-items:center; justify-content:center; border-radius:10px; font-weight:bold; user-select:none; }
+    .btn-salto{ width:100px; height:80px; font-size:14px; pointer-events:auto; }
+</style>
+
+<script>
+let nivelActual = parseInt(sessionStorage.getItem('arberi_lvl')) || 1;
+let juegoIniciado = false;
+
+function iniciarMision(){
+    document.querySelector('#pantalla-registro').style.display = "none";
+    document.querySelector('#ui-top').style.display = "block";
+    if('ontouchstart' in window || navigator.maxTouchPoints > 0){
+        document.querySelector('.controles-movil').style.display = "flex";
+    }
+    juegoIniciado = true;
+}
+
+function avanzarNivel() {
+    juegoIniciado = false;
+    // Lógica para 3 niveles: 1 -> 2 -> 3 -> (vuelve a 1)
+    let proximo = nivelActual + 1;
+    if(proximo > 3) proximo = 1; 
+    
+    sessionStorage.setItem('arberi_lvl', proximo);
+    setTimeout(() => { location.reload(); }, 100);
+}
+
+function morirTotal() {
+    sessionStorage.setItem('arberi_lvl', 1);
+    location.reload();
+}
+
+AFRAME.registerComponent('motor-gameplay',{
+    init:function(){
+        this.keys = {};
+        this.vidas = 3;
+        this.puedeSaltar = true;
+        this.invulnerable = false;
+        
+        window.addEventListener('keydown',(e)=>{ this.keys[e.code] = true; });
+        window.addEventListener('keyup',(e)=>{ this.keys[e.code] = false; });
+        
+        const bindTouch = (id,code)=>{
+            const el = document.querySelector(id);
+            if(el) {
+                el.addEventListener('touchstart',(e)=>{ e.preventDefault(); this.keys[code] = true; });
+                el.addEventListener('touchend',(e)=>{ e.preventDefault(); this.keys[code] = false; });
+            }
+        };
+        bindTouch('#m-up','KeyW'); bindTouch('#m-down','KeyS');
+        bindTouch('#m-left','KeyA'); bindTouch('#m-right','KeyD');
+        bindTouch('#m-jump','Space');
+
+        this.el.addEventListener('collide',(e)=>{
+            const target = e.detail.body.el;
+            if(!target || !juegoIniciado) return;
+
+            if(target.id === 'lava' && !this.invulnerable) this.perderVida();
+            
+            // ESTE ES EL BLOQUE QUE DETECTA EL FINAL DEL NIVEL
+            if(target.id === 'meta'){
+                avanzarNivel();
+            }
+        });
+    },
+    perderVida:function(){
+        this.vidas--;
+        document.querySelector('#vidas-val').innerText = "❤️".repeat(this.vidas);
+        if(this.vidas <= 0){
+            juegoIniciado = false;
+            document.querySelector('#game-over-screen').style.display = "flex";
+        } else {
+            this.el.body.position.set(0,3,0);
+            this.el.body.velocity.set(0,0,0);
+            this.invulnerable = true;
+            setTimeout(()=>{ this.invulnerable = false; }, 1000);
+        }
+    },
+    tick:function(){
+        if(!this.el.body || !juegoIniciado) return;
+        this.el.body.quaternion.set(0,0,0,1);
+        this.el.body.angularVelocity.set(0,0,0);
+        let v = this.el.body.velocity;
+        let speed = 8;
+        if(this.keys['KeyW']) v.z = -speed; else if(this.keys['KeyS']) v.z = speed; else v.z = 0;
+        if(this.keys['KeyA']) v.x = -speed; else if(this.keys['KeyD']) v.x = speed; else v.x = 0;
+        if(this.keys['Space'] && Math.abs(v.y) < 0.1 && this.puedeSaltar){
+            v.y = 13; this.puedeSaltar = false;
+        }
+        if(!this.keys['Space']) this.puedeSaltar = true;
+    }
+});
+
+AFRAME.registerComponent('seguimiento-camara',{
+    init: function() { this.jugador = document.querySelector('#jugador'); },
+    tick:function(){
+        if(!this.jugador || !juegoIniciado) return;
+        this.el.object3D.position.lerp(this.jugador.object3D.position, 0.1);
+    }
+});
+
+AFRAME.registerComponent('trampa-caida',{
+    init:function(){
+        this.el.addEventListener('collide',(e)=>{
+            if(e.detail.body.el?.id === "jugador"){
+                setTimeout(()=>{
+                    this.el.removeAttribute('static-body');
+                    this.el.setAttribute('dynamic-body',{ mass:5 });
+                },200);
+            }
+        });
+    }
+});
+</script>
+</head>
+
+<body>
+
+<div class="controles-movil">
+    <div class="d-pad">
+        <div></div><div id="m-up" class="d-btn">▲</div><div></div>
+        <div id="m-left" class="d-btn">◀</div><div id="m-down" class="d-btn">▼</div><div id="m-right" class="d-btn">▶</div>
+    </div>
+    <div id="m-jump" class="btn-salto">SALTO</div>
+</div>
+
+<div id="pantalla-registro" class="overlay">
+    <div class="terminal-box">
+        <h1>SYSTEC CORE</h1>
+        <p>STATUS: <span id="lvl-info"></span></p>
+        <input type="text" id="input-nombre" placeholder="ID DEL PILOTO">
+        <br>
+        <button class="btn-systec" onclick="iniciarMision()">ESTABLECER ENLACE</button>
+    </div>
+</div>
+
+<div id="ui-top">PILOTO: ACTIVO | <span id="vidas-val">❤️❤️❤️</span></div>
+
+<div id="game-over-screen" class="overlay" style="display:none">
+    <div class="terminal-box">
+        <h1>CONEXIÓN PERDIDA</h1>
+        <p>SISTEMA REINICIADO AL NIVEL 1</p>
+        <button class="btn-systec" onclick="morirTotal()">REBOTAR</button>
+    </div>
+</div>
+
+<a-scene physics="gravity:-12; friction:0.01;">
+<a-assets>
+  <img id="textura-cielo" src="img/cielo.jpg">
+  <img id="textura-lava" src="img/lava.jpg">
+</a-assets>
+
+<!-- CIELO -->
+
+<a-sky id="textura-cielo" src="img/cielo.jpg" rotation="0 -90 0"></a-sky>
+
+<!-- LAVA -->
+
+<a-plane id="lava"
+rotation="-90 0 0"
+position="0 -6 0"
+width="2000"
+height="2000"
+
+material=
+src:img/lava.jpg;
+repeat:20 20;
+transparent:true;
+emissive:#ff3300;
+emissiveIntensity:0.7;
+shader:standard
+
+animation="property: material.offset; from: 0 0; to:1 1; dur:300000; loop: true; easing: linear"
+
+static-body>
+</a-plane>
+    <script>
+        document.getElementById('lvl-info').innerText = "NIVEL " + nivelActual;
+        
+        if (nivelActual === 1) {
+            document.write(`
+            <a-entity id="nivel-1">
+                <!-- 🔰 INICIO -->
+<a-box class="suelo" static-body position="0 0 0"
+width="6" height="1" depth="6" color="#222"></a-box>
+
+<!-- NIVEL 1 -->
+<a-box class="suelo trampa" trampa-caida static-body position="-6 2 -10"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo" static-body position="6 2 -10"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo trampa" trampa-caida static-body position="0 2 -10"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+
+<!-- NIVEL 2 -->
+<a-box class="suelo" static-body position="-6 6 -20"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo trampa" trampa-caida static-body position="0 6 -20"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo trampa" trampa-caida static-body position="6 6 -20"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+
+<!-- NIVEL 3 -->
+<a-box class="suelo trampa" trampa-caida static-body position="-6 10 -30"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo trampa" trampa-caida static-body position="0 10 -30"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo" static-body position="6 10 -30"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+
+<!-- NIVEL 4 -->
+<a-box class="suelo trampa" trampa-caida static-body position="-6 14 -40"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo" static-body position="0 14 -40"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+
+<a-box class="suelo trampa" trampa-caida static-body position="6 14 -40"
+width="3.5" height="0.4" depth="3.5" color="#555"></a-box>
+       
+<!-- FINAL -->
+<a-box id="meta" static-body position="0 15 -50" width="8" height="0.5" depth="8" color="#00ffff"></a-box>
+
+            <a-box width="18" height="0.5" depth="18" color="#00ffff" material="emissive: #00ffff; emissiveIntensity: 2"></a-box>
+
+            <a-text value="CORE ALCANZADO" align="center" position="0 5 0" scale="12 12 12"></a-text>
+
+            <a-light type="point" intensity="3" color="#00ffff" position="0 6 0"></a-light>
+            </a-entity>
+            `);
+        } else if (nivelActual === 2) {
+            document.write(`
+            <a-entity id="nivel-2">
+                <a-box static-body position="0 0 0"
+width="8"
+height="0.5"
+depth="8"
+color="#222">
+</a-box>
+
+<a-box static-body
+position="0 4 -12"
+width="5"
+height="0.4"
+depth="5"
+color="#00ffff">
+</a-box>
+
+<a-box static-body
+position="-9 7 -18"
+width="5"
+height="0.4"
+depth="5"
+color="#ff00ff"
+
+animation="
+property: position;
+to:-9 10 -18;
+dur:1800;
+dir:alternate;
+loop:true">
+</a-box>
+
+<a-box
+  static-body
+  position="0 9 -26"
+  width="5"
+  height="0.4"
+  depth="5"
+  color="#00ffff"
+
+  animation="
+    property: position;
+    to: 5 9 -26;
+    dur: 2000;
+    dir: alternate;
+    loop: true">
+</a-box>
+
+<a-box static-body
+position="0 10 -28"
+width="6"
+height="0.3"
+depth="6"
+color="#ff4444"
+
+animation="
+property: visible;
+to:false;
+dur:1000;
+dir:alternate;
+loop:true">
+</a-box>
+
+<a-box static-body
+position="0 14 -40"
+width="4"
+height="0.3"
+depth="4"
+
+material="
+color:#00ffcc;
+emissive:#00ffcc"
+
+animation="
+property: material.emissiveIntensity;
+from:0.2;
+to:2;
+dur:1000;
+loop:true;
+dir:alternate">
+</a-box>
+
+<a-box static-body
+position="12 14 -45"
+width="5"
+height="0.4"
+depth="5"
+color="#ffaa00"
+
+animation="
+property: rotation;
+to:0 360 0;
+dur:3000;
+loop:true">
+</a-box>
+
+<!-- BOOST -->
+
+<a-box class="boost"
+static-body
+position="0 18 -55"
+
+width="4"
+height="0.3"
+depth="4"
+
+material="
+color:#00ff00;
+emissive:#00ff00">
+</a-box>
+
+<!-- META -->
+
+<a-entity id="meta"
+static-body
+position="0 20 -70">
+
+<a-box
+width="10"
+height="1"
+depth="10"
+
+color="#00ffff"
+
+material="
+emissive:#00ffff;
+emissiveIntensity:2">
+</a-box>
+
+</a-entity>
+            </a-entity>
+            `);
+        } else {
+            // DISEÑO NIVEL 3 (VÍAS EXTREMAS)
+            document.write(`
+            <a-entity id="nivel-3">
+                <a-box class="suelo"
+static-body
+position="0 0 0"
+width="6"
+height="0.5"
+depth="6"
+color="#111">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="0 3 -10"
+width="3"
+height="0.4"
+depth="3"
+color="#222">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="-5 6 -18"
+width="2"
+height="0.4"
+depth="2"
+color="#333">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="4 9 -26"
+width="2"
+height="0.4"
+depth="2"
+color="#444">
+</a-box>
+
+<!-- MOVIL -->
+
+<a-box class="suelo"
+dynamic-body="mass:0"
+position="0 12 -35"
+width="3"
+height="0.4"
+depth="3"
+color="#00ffff"
+
+animation="
+property:position;
+to:8 12 -35;
+dir:alternate;
+dur:2500;
+loop:true">
+</a-box>
+
+<!-- FALSA -->
+
+<a-box
+position="0 14 -40"
+width="4"
+height="0.2"
+depth="4"
+color="#550000"
+material="opacity:0.5">
+</a-box>
+
+<!-- REAL -->
+
+<a-box class="suelo"
+static-body
+position="8 15 -48"
+width="2"
+height="0.4"
+depth="2"
+color="#7700ff">
+</a-box>
+
+<!-- MICRO -->
+
+<a-box class="suelo"
+static-body
+position="12 18 -56"
+width="1.5"
+height="0.3"
+depth="1.5"
+color="#00ffcc">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="8 21 -63"
+width="1.5"
+height="0.3"
+depth="1.5"
+color="#00ffcc">
+</a-box>
+
+<a-box class="suelo"
+static-body
+position="3 24 -70"
+width="1.5"
+height="0.3"
+depth="1.5"
+color="#00ffcc">
+</a-box>
+
+<!-- TUNEL -->
+
+<a-box class="suelo"
+static-body
+position="0 28 -80"
+width="2"
+height="0.4"
+depth="10"
+color="#111">
+</a-box>
+
+<a-box
+static-body
+position="-2 30 -80"
+width="0.5"
+height="5"
+depth="10"
+color="#ff0000">
+</a-box>
+
+<a-box
+static-body
+position="2 30 -80"
+width="0.5"
+height="5"
+depth="10"
+color="#ff0000">
+</a-box>
+
+<!-- GIRATORIA -->
+
+<a-entity
+position="0 30 -95"
+
+animation="
+property:rotation;
+to:0 360 0;
+loop:true;
+dur:4000;
+easing:linear">
+
+<a-box class="suelo"
+static-body
+width="8"
+height="0.4"
+depth="2"
+color="#ff00ff">
+</a-box>
+
+</a-entity>
+
+<!-- FINAL -->
+
+<a-box class="suelo"
+static-body
+position="0 3 -110"
+width="5"
+height="0.5"
+depth="5"
+color="#ffffff"
+material="emissive:#00ffff; emissiveIntensity:1">
+</a-box>
+
+<!-- META -->
+
+<a-entity id="meta"
+static-body
+position="0 35 -110">
+
+<a-box
+width="10"
+height="0.5"
+depth="10"
+color="#00ffff"
+material="emissive:#00ffff; emissiveIntensity:3">
+</a-box>
+
+<a-text
+value="CORE COMPLETADO"
+align="center"
+position="0 5 0"
+scale="8 8 8"
+color="#00ffff">
+</a-text>
+<a-text
+value="LIMBO INFINITO"
+align="center"
+position="0 -28 0"
+scale="8 8 8"
+color="#fffff">
+</a-text>
+
+
+            </a-entity>
+            `);
+        }
+    </script>
+
+    <a-entity id="jugador" position="0 3 0" scale="1.5 1.5 1.5" motor-gameplay dynamic-body="shape:box; mass:2; fixedRotation:true">
+        <a-box position="0 1 0" depth="0.3" height="0.8" width="0.5" color="#0D47A1"></a-box>
+        <a-sphere position="0 1.6 0" radius="0.25" color="#543d27"></a-sphere>
+        <a-box position="0 1 -0.0178" depth="0.3" height="0.8" width="0.5" color="#0D47A1" material="" geometry=""></a-box>
+<a-torus position="0.02027 1.22817 -0.17149" radius="0.18" radius-tubular="0.01" color="#aaa" material="color: #ffe042" geometry="" rotation="3.76 0 0"></a-torus>
+
+
+<a-sphere position="0 1.6 0" radius="0.25" color="#dcb48c" material="color: #543d27" geometry=""></a-sphere>
+<a-sphere position="-0.08 1.65 -0.24727" radius="0.02" color="#000" material="color: #1a59ea" geometry=""></a-sphere>
+<a-sphere position="0.08 1.65 -0.26903" radius="0.02" color="#000" material="color: #16acca" geometry=""></a-sphere>
+<a-text value="X" position="0.08 1.58 0.23" scale="0.2 0.2 0.2" color="#000" text=""></a-text>
+<a-box position="0.00797 1.78624 0.01477" depth="0.35" height="0.12" width="0.5" color="#222" material="color: #20b669" geometry="" scale="0.99 1.16 1.37"></a-box>
+ <a-sphere position="0.28 1.65 0" radius="0.015" color="#ccc" material="color: #0400f0; emissive: #1f1f1f" geometry=""></a-sphere>
+<a-sphere position="0.28 1.55 0" radius="0.015" color="#ccc" material="color: #ff0000" geometry=""></a-sphere>
+
+<a-box position="-0.15 0.3 0" depth="0.25" height="0.7" width="0.2" color="#222" material="" geometry=""></a-box>
+<a-box position="0.15 0.3 0" depth="0.25" height="0.7" width="0.2" color="#222" material="" geometry=""></a-box>
+<a-box position="-0.15 -0.05 -0.06946" depth="0.4" height="0.1" width="0.25" color="#111" material="" geometry=""></a-box>
+<a-box position="0.15 -0.05 -0.06413" depth="0.4" height="0.1" width="0.25" color="#111" material="" geometry=""></a-box>
+
+
+<a-box position="-0.4 1 0" depth="0.2" height="0.7" width="0.2" color="#dcb48c" material="color: #543d27" geometry=""></a-box>
+<a-box position="0.4 1 0" depth="0.2" height="0.7" width="0.2" color="#dcb48c" material="color: #543d27" geometry=""></a-box>
+<a-cylinder position="0.45 0.6 -0.2" radius="0.04" height="0.2" color="#333" material="" geometry=""></a-cylinder>
+<a-sphere position="0.45 0.72 -0.2" radius="0.03" color="#f00" material="" geometry=""></a-sphere>
+<a-torus position="0.45 0.7 -0.1" radius="0.03" radius-tubular="0.008" color="#ccc" material="" geometry=""></a-torus>
+    </a-entity>
+
+    <a-entity id="camrig" seguimiento-camara>
+        <a-camera position="0 7 14" look-controls="enabled:false" wasd-controls="enabled:false"></a-camera>
+    </a-entity>
+
+    <a-light type="ambient" intensity="1"></a-light>
+</a-scene>
+
+</body>
+</html>
